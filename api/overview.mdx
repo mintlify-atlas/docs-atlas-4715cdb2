@@ -1,0 +1,80 @@
+---
+title: "REST API overview — RAG PDF Highlighter"
+description: "Overview of the RAG PDF Highlighter REST API: base URL, available endpoints, request format, and response types."
+---
+
+RAG PDF Highlighter exposes a minimal REST API with two endpoints — a health check and the highlight endpoint. All requests are JSON; the highlight response is a binary PDF.
+
+## Base URL
+
+```
+http://localhost:8000
+```
+
+Adjust the host and port as needed when deploying behind a reverse proxy or in a container environment.
+
+## Endpoints
+
+<CardGroup cols={2}>
+  <Card title="GET /" icon="heart-pulse" href="/api/highlight">
+    Health check. Returns `{"status": "ok the app is running"}` with HTTP 200.
+  </Card>
+  <Card title="POST /highlight" icon="highlighter" href="/api/highlight">
+    Accepts a PDF URL and a list of document chunks. Downloads the PDF, applies highlights using 3-tier text matching, and returns the annotated PDF as a binary file.
+  </Card>
+</CardGroup>
+
+## Request format
+
+All requests to `POST /highlight` must set `Content-Type: application/json`. The request body must be a JSON object conforming to the following schema:
+
+```json
+{
+  "pdf_url": "https://example.com/report.pdf",
+  "documents": [
+    {
+      "page_content": "Text chunk to highlight",
+      "metadata": {
+        "page": 0
+      }
+    }
+  ]
+}
+```
+
+`pdf_url` must be a publicly accessible URL from which the service can download the PDF. Each entry in `documents` represents one text chunk to locate and annotate. The `metadata.page` value is zero-indexed — page 0 is the first page of the document.
+
+<Note>
+  Both `pdf_url` and `documents` are required. Omitting either field returns HTTP 422 Unprocessable Entity.
+</Note>
+
+## Response format
+
+### Success
+
+A successful `POST /highlight` request returns HTTP 200 with the following headers:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/pdf` |
+| `Content-Disposition` | `attachment; filename="highlighted.pdf"` |
+
+The response body is the raw binary content of the annotated PDF.
+
+### Errors
+
+All error responses return a JSON body with a single `detail` field describing the failure:
+
+```json
+{"detail": "error message here"}
+```
+
+| Status code | Cause |
+|---|---|
+| `400 Bad Request` | PDF download failed, or an empty document list was passed |
+| `422 Unprocessable Entity` | Missing required fields in the request body |
+| `500 Internal Server Error` | Unexpected failure during highlighting |
+
+<Warning>
+  Temp files created during a request are deleted automatically after the response is sent, regardless of whether the request succeeded or failed.
+</Warning>

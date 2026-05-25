@@ -1,0 +1,156 @@
+---
+title: "How 3-tier text matching works in PDF highlighting"
+description: "RAG PDF Highlighter uses exact, sentence-level, and collapsed-whitespace search strategies to reliably locate text chunks in real-world PDFs."
+---
+
+Real-world PDFs store text in surprisingly varied ways — some use tight whitespace, others render characters individually with spaces between them, and many split sentences across multiple internal text fragments. Because of this variety, a single search strategy will silently miss chunks in PDFs it was not designed for. RAG PDF Highlighter solves this by running three strategies in order of specificity, stopping as soon as one returns a match. This page explains each strategy, when it fires, and what the code does.
+
+## Strategy 1 — Exact match
+
+The first strategy normalizes the chunk text and searches the page verbatim. Normalization is handled by `_normalize`, which collapses consecutive whitespace characters into a single space and strips leading/trailing whitespace. The normalized string is then passed directly to PyMuPDF's `page.search_for`.
+
+```python
+def _normalize(text: str) -> str:
+    """Collapse whitespace runs into a single space and strip edges."""
+    return " ".join(text.split())
+
+
+def _search_exact(page: fitz.Page, text: str) -> Rects:
+    """Strategy 1 – search for the full normalised text verbatim."""
+    return page.search_for(text)
+```
+
+<Tip>
+Exact match is the fastest strategy. For clean, machine-generated PDFs — such as those exported directly from Word, LaTeX, or most modern document tools — this strategy is almost always sufficient.
+</Tip>
+
+If `page.search_for` returns one or more rectangles, the pipeline stops here and highlights those regions. No further strategies are attempted.
+
+## Strategy 2 — Sentence-level match
+
+When the exact match returns nothing, the chunk is broken into sentence-like fragments and each fragment is searched independently. This handles chunks that span multiple lines or contain minor formatting differences between the retrieval index and the stored PDF text layer.
+
+Splitting is done by `_split_sentences`, which uses a regex to break on sentence-ending punctuation (`.`, `!`, `?`, `:`, `;`) followed by whitespace, or on newline characters. Fragments shorter than 20 characters are discarded to avoid false positives from short noise strings.
+
+```python
+def _split_sentences(text: str) -> list[str]:
+    """Break *text* into sentence-like fragments (≥ 20 chars each)."""
+    parts = re.split(r"(?<=[.!?:;])\s+|\n+", text)
+    return [p.strip() for p in parts if len(p.strip()) > 20]
+
+
+def _search_by_sentence(page: fitz.Page, text: str) -> Rects:
+    """Strategy 2 – split into sentences and search each independently."""
+    rects: Rects = []
+    for sentence in _split_sentences(text):
+        rects.extend(page.search_for(sentence))
+    return rects
+```
+
+Each sentence that produces a match contributes its rectangles to the result set. The combined list is returned if it is non-empty, and the third strategy is skipped.
+
+<Note>
+Sentence-level match is especially useful for chunks retrieved from chunkers that merge multiple sentences, or for scanned PDFs re-OCR'd with slightly different whitespace than the source.
+</Note>
+
+## Strategy 3 — Collapsed-whitespace match
+
+The most resilient strategy handles PDFs where the text layer stores individual characters with spaces between them — for example, `"WHAT"` encoded as `"W H A T"`. A normal string search will never find `"WHAT"` in such a document.
+
+The approach removes all whitespace from both the query and the extracted page text, then slides a fixed-length window across the collapsed query. For each window position, it searches for the fragment in the collapsed page text, maps the match position back to the original (whitespace-intact) page text using `_map_collapsed_pos`, and recovers a span that PyMuPDF can locate via `page.search_for`.
+
+```python
+def _collapse(text: str) -> str:
+    """Remove **all** whitespace (useful for char-spaced PDF artifacts)."""
+    return re.sub(r"\s+", "", text)
+
+
+def _search_collapsed(page: fitz.Page, text: str) -> Rects:
+    page_text = page.get_text("text")
+    page_collapsed = _collapse(page_text)
+    chunk_collapsed = _collapse(text)
+
+    if len(chunk_collapsed) < 10:
+        return []
+
+    fragment_len = min(60, len(chunk_collapsed))
+    step = max(fragment_len // 2, 20)
+    rects: Rects = []
+
+    for start in range(0, len(chunk_collapsed) - fragment_len + 1, step):
+        fragment = chunk_collapsed[start : start + fragment_len]
+        pos = page_collapsed.find(fragment)
+        while pos != -1:
+            orig_start = _map_collapsed_pos(page_text, pos)
+            orig_end = _map_collapsed_pos(page_text, pos + fragment_len)
+
+            if orig_start is not None and orig_end is not None:
+                span = page_text[orig_start:orig_end].strip()
+                if span:
+                    rects.extend(page.search_for(span))
+
+            pos = page_collapsed.find(fragment, pos + 1)
+
+    return _dedupe_rects(rects)
+```
+
+The sliding window uses a fragment length of up to 60 collapsed characters, stepping by half the fragment length (minimum 20) to ensure overlapping coverage. Chunks with fewer than 10 non-whitespace characters are skipped entirely to avoid unreliable matches.
+
+<Note>
+`_map_collapsed_pos` walks the original text character-by-character, counting only non-whitespace characters until it reaches the target collapsed index. This mapping is what allows the recovered span to contain the whitespace the PDF actually stores, making it searchable by PyMuPDF.
+</Note>
+
+## Deduplication
+
+All three strategies can return overlapping rectangles, particularly when multiple window positions in strategy 3 match the same region. After any strategy completes, `_dedupe_rects` removes near-duplicate rectangles where all four corners are within 5 points of an already-accepted rectangle.
+
+```python
+def _dedupe_rects(rects: Rects, threshold: float = 5.0) -> Rects:
+    """Remove near-duplicate rectangles (within *threshold* points)."""
+    if not rects:
+        return rects
+
+    unique: Rects = [rects[0]]
+    for rect in rects[1:]:
+        already_present = any(
+            abs(rect.x0 - u.x0) < threshold
+            and abs(rect.y0 - u.y0) < threshold
+            and abs(rect.x1 - u.x1) < threshold
+            and abs(rect.y1 - u.y1) < threshold
+            for u in unique
+        )
+        if not already_present:
+            unique.append(rect)
+    return unique
+```
+
+The 5-point threshold is chosen to absorb sub-pixel differences that arise when PyMuPDF resolves the same visible word through different recovered spans.
+
+## Normalization
+
+Before any strategy runs, every chunk's `page_content` is passed through `_normalize`. This collapses any sequence of whitespace (spaces, tabs, newlines) into a single space and strips the edges, producing a clean, predictable string for all three strategies to work with.
+
+```python
+def _normalize(text: str) -> str:
+    """Collapse whitespace runs into a single space and strip edges."""
+    return " ".join(text.split())
+```
+
+<Tip>
+Normalization is applied in `highlight_chunks_in_pdf` before the search loop, so callers do not need to pre-process chunk text themselves.
+</Tip>
+
+The three strategies are tried in order by `_search_with_fallbacks`, which returns the first non-empty result:
+
+```python
+def _search_with_fallbacks(page: fitz.Page, text: str) -> Rects:
+    """
+    Run each search strategy in order, returning as soon as one succeeds.
+    """
+    for strategy in (_search_exact, _search_by_sentence, _search_collapsed):
+        if rects := strategy(page, text):
+            return rects
+    return []
+```
+
+If all three strategies return empty results for a given chunk, no highlight is applied for that chunk and processing continues with the next one.

@@ -1,0 +1,82 @@
+---
+title: "Run RAG PDF Highlighter as a REST microservice"
+description: "Deploy RAG PDF Highlighter with Uvicorn, then call POST /highlight to annotate PDFs from any language or tool over HTTP."
+---
+
+This guide walks you through deploying the RAG PDF Highlighter FastAPI application with Uvicorn and calling it over HTTP. Once running, any client that can make HTTP requests — curl, Python, JavaScript, or any other language — can submit a PDF URL and a list of text chunks and receive an annotated PDF in return.
+
+## Prerequisites
+
+- Python >= 3.10
+- `pip` available in your environment
+
+## Steps
+
+<Steps>
+  <Step title="Install the package">
+    Install RAG PDF Highlighter from PyPI:
+
+    ```bash
+    pip install rag-pdf-highlighter
+    ```
+  </Step>
+
+  <Step title="Start the server">
+    Launch the FastAPI application with Uvicorn, binding to all interfaces on port 8000:
+
+    ```bash
+    uvicorn rag_pdf_highlighter.main:app --host 0.0.0.0 --port 8000
+    ```
+  </Step>
+
+  <Step title="Verify the health check">
+    Confirm the service is up by hitting the root endpoint:
+
+    ```bash
+    curl http://localhost:8000/
+    ```
+
+    A running service returns:
+
+    ```json
+    {"status": "ok the app is running"}
+    ```
+  </Step>
+
+  <Step title="Send a highlight request">
+    Submit a PDF URL and a list of text chunks to annotate. The request body requires a `pdf_url` string and a `documents` array where each item has a `page_content` string and a `metadata` object with a zero-indexed `page` number:
+
+    ```bash
+    curl -X POST http://localhost:8000/highlight \
+      -H "Content-Type: application/json" \
+      -d '{
+        "pdf_url": "https://example.com/report.pdf",
+        "documents": [
+          {
+            "page_content": "Text to highlight in the PDF",
+            "metadata": {"page": 0}
+          }
+        ]
+      }' \
+      --output highlighted.pdf
+    ```
+  </Step>
+</Steps>
+
+## Response
+
+When the request succeeds, the service streams back a binary PDF with `Content-Type: application/pdf` and the filename `highlighted.pdf`. Save it directly to disk with `--output` in curl, or read the response bytes in your HTTP client of choice.
+
+## Error handling
+
+| HTTP status | Meaning |
+|-------------|---------|
+| `400` | Bad PDF URL (download failed) or no documents were provided |
+| `422` | Invalid request payload — check that `pdf_url` is a string and `documents` is a non-empty array with the correct fields |
+| `500` | Unexpected server-side error during highlighting |
+
+<Note>
+  All temporary files — both the downloaded PDF and the annotated output — are deleted automatically after each request via FastAPI background tasks. No files accumulate on the server between requests.
+</Note>
+
+For the complete field-by-field breakdown of the request and response schemas, see the [API reference](/api/overview).

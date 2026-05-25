@@ -1,0 +1,78 @@
+{
+  "projectType": "api-service",
+  "projectName": "RAG PDF Highlighter",
+  "projectDescription": "A FastAPI microservice and Python library that downloads a PDF, locates text chunks using a 3-tier matching strategy, and returns an annotated copy with highlights applied — purpose-built for RAG pipelines.",
+  "theme": "luma",
+  "primaryColor": "#7c7c80",
+  "lightColor": "#151c28",
+  "darkColor": "#f2f2f2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/microservice",
+              "guides/library-usage",
+              "guides/docker"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/text-matching",
+              "concepts/rag-integration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/overview",
+              "api/highlight"
+            ]
+          },
+          {
+            "group": "Python Library",
+            "pages": [
+              "api/highlight-chunks",
+              "api/exceptions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "3-tier text matching: exact → sentence → collapsed-whitespace fallback",
+    "Async PDF download via httpx with timeout handling",
+    "Stateless operation with automatic temp-file cleanup",
+    "Docker-ready single-command container deployment",
+    "Usable as both a FastAPI microservice and a standalone Python library",
+    "LangChain Document-compatible input schema"
+  ],
+  "publicApiSurface": [
+    "POST /highlight",
+    "GET /",
+    "highlight_chunks_in_pdf(pdf_path, documents) -> str",
+    "download_pdf(url) -> str (async)",
+    "cleanup_file(path) -> None",
+    "HighlightError",
+    "PDFDownloadError",
+    "PDFNotFoundError",
+    "NoDocumentsError"
+  ]
+}

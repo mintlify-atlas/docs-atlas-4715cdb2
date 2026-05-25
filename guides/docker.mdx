@@ -1,0 +1,115 @@
+---
+title: "Deploy RAG PDF Highlighter with Docker"
+description: "Build and run RAG PDF Highlighter in a Docker container with a single command, exposing the REST API on port 8000."
+---
+
+Docker deployment is the simplest path to a production-ready instance of RAG PDF Highlighter. The image bundles all system and Python dependencies — including PyMuPDF and its native libraries — so there is nothing to install on the host beyond Docker itself.
+
+## Dockerfile
+
+The project ships with the following Dockerfile:
+
+```dockerfile
+FROM python:3.12-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies required by PyMuPDF
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    libmupdf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy application code and install from pyproject.toml
+COPY . .
+RUN pip install --no-cache-dir .
+
+# Expose the port Uvicorn will listen on
+EXPOSE 8000
+
+# Run with Uvicorn
+CMD ["uvicorn", "rag_pdf_highlighter.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+## Steps
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/MuhammadSalmanAhmad/rag-pdf-highlighter.git
+    ```
+  </Step>
+
+  <Step title="Build the image">
+    From the repository root, build and tag the image:
+
+    ```bash
+    docker build -t rag-pdf-highlighter .
+    ```
+
+    The build installs `libmupdf-dev` and all Python dependencies. This takes a minute on the first run; subsequent builds use the layer cache.
+  </Step>
+
+  <Step title="Run the container">
+    Start the container and map port 8000 on the host to port 8000 inside the container:
+
+    ```bash
+    docker run -p 8000:8000 rag-pdf-highlighter
+    ```
+  </Step>
+
+  <Step title="Test the health check">
+    Confirm the service is responding:
+
+    ```bash
+    curl http://localhost:8000/
+    ```
+
+    Expected response:
+
+    ```json
+    {"status": "ok the app is running"}
+    ```
+  </Step>
+
+  <Step title="Send a highlight request">
+    Submit a PDF URL and text chunks to annotate:
+
+    ```bash
+    curl -X POST http://localhost:8000/highlight \
+      -H "Content-Type: application/json" \
+      -d '{
+        "pdf_url": "https://example.com/report.pdf",
+        "documents": [
+          {
+            "page_content": "Text to highlight in the PDF",
+            "metadata": {"page": 0}
+          }
+        ]
+      }' \
+      --output highlighted.pdf
+    ```
+
+    The response is a binary PDF saved to `highlighted.pdf` in the current directory.
+  </Step>
+</Steps>
+
+## Port mapping
+
+The `-p 8000:8000` flag maps port 8000 on your host machine to port 8000 inside the container (the port Uvicorn listens on, as declared by `EXPOSE 8000` in the Dockerfile). To serve on a different host port, change the left side of the mapping — for example, `-p 9090:8000` makes the API available at `http://localhost:9090`.
+
+<Tip>
+  To run the container in the background so it does not block your terminal, add the `-d` (detached) flag:
+
+  ```bash
+  docker run -d -p 8000:8000 rag-pdf-highlighter
+  ```
+
+  Use `docker logs <container-id>` to inspect Uvicorn's output, and `docker stop <container-id>` to shut it down.
+</Tip>
+
+<Note>
+  The container installs `libmupdf-dev` at image build time. No additional system dependencies are needed on the host at runtime — all native libraries are self-contained inside the image.
+</Note>

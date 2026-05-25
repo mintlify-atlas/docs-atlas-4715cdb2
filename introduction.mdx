@@ -1,0 +1,62 @@
+---
+title: "RAG PDF Highlighter: annotate PDFs for RAG pipelines"
+description: "RAG PDF Highlighter locates text chunks in PDFs using a 3-tier matching strategy and returns an annotated copy — built for RAG pipelines."
+---
+
+RAG PDF Highlighter is a Python package that locates text chunks inside PDF documents and returns an annotated copy with highlights applied. It ships as both a **FastAPI microservice** — ready to receive HTTP requests from any RAG pipeline — and a **plain Python library** you can call directly without starting a server. All inputs and outputs are compatible with [LangChain `Document`](https://python.langchain.com/docs/concepts/documents/) objects, so it slots naturally into existing retrieval workflows.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="3-tier text matching" icon="layers">
+    Finds chunks using exact match, then sentence-level fallback, then collapsed-whitespace matching for character-spaced PDF artifacts.
+  </Card>
+  <Card title="Async PDF download" icon="bolt">
+    Downloads remote PDFs with `httpx` using non-blocking I/O, keeping the service responsive under concurrent load.
+  </Card>
+  <Card title="Stateless" icon="trash">
+    Temporary files are cleaned up after every request. No state accumulates between calls.
+  </Card>
+  <Card title="Docker-ready" icon="docker">
+    A single `docker build` and `docker run` command gets the service running in a container.
+  </Card>
+  <Card title="Library-friendly" icon="code">
+    The core `highlight_chunks_in_pdf` function raises plain Python exceptions. FastAPI is not required to use it.
+  </Card>
+  <Card title="LangChain Document compatible" icon="link">
+    Accepts `langchain_core.documents.Document` objects directly, with `page_content` and `metadata.page` fields.
+  </Card>
+</CardGroup>
+
+## Installation
+
+Install the package from PyPI:
+
+```bash
+pip install rag-pdf-highlighter
+```
+
+To install from source with development dependencies:
+
+```bash
+git clone https://github.com/MuhammadSalmanAhmad/rag-pdf-highlighter.git
+cd rag-pdf-highlighter
+pip install -e ".[dev]"
+```
+
+## Two ways to use it
+
+**As a microservice:** Start the Uvicorn server and send `POST /highlight` requests with a PDF URL and a list of document chunks. The service downloads the PDF, applies highlights, and streams back the annotated file. This mode is suitable for multi-language stacks or teams that want a standalone service boundary.
+
+**As a Python library:** Import `highlight_chunks_in_pdf` directly and pass a local PDF path along with your `Document` list. No HTTP layer is involved. This mode is useful when your RAG pipeline is already written in Python and you want to avoid the overhead of a network hop.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run the service and send your first highlight request in three steps.
+  </Card>
+  <Card title="Guides" icon="book" href="/guides/microservice">
+    Learn how to deploy with Docker and integrate the library into your pipeline.
+  </Card>
+</CardGroup>

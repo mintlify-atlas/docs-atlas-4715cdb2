@@ -1,133 +1,62 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "RAG PDF Highlighter: Annotate PDFs for RAG Pipelines"
+description: "RAG PDF Highlighter is a FastAPI microservice and Python library that locates text chunks in PDFs and returns annotated copies with highlights applied."
 ---
 
-## Setting up
+RAG PDF Highlighter lets you take the output of a retrieval-augmented generation (RAG) pipeline — a list of text chunks with page numbers — and produce a highlighted PDF showing exactly where each chunk appears in the original document. It works as a standalone FastAPI microservice or as a Python library you import directly into your code.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send your first highlight request in under five minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Run as a microservice" icon="server" href="/guides/microservice">
+    Deploy the FastAPI service and call the REST API from any language.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Use as a Python library" icon="python" href="/guides/library-usage">
+    Import `highlight_chunks_in_pdf` directly into your RAG pipeline.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API reference" icon="code" href="/api/overview">
+    Full endpoint and parameter documentation for the REST API.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+<Steps>
+  <Step title="Provide a PDF URL and text chunks">
+    Send a `POST /highlight` request with a publicly accessible PDF URL and a list of LangChain-style `Document` objects — each with `page_content` and a `metadata.page` field.
+  </Step>
+  <Step title="The service locates each chunk">
+    RAG PDF Highlighter tries three progressively looser search strategies — exact match, sentence-level match, and collapsed-whitespace match — to handle character-spaced PDFs and other real-world formatting quirks.
+  </Step>
+  <Step title="Receive the annotated PDF">
+    The service streams back a highlighted PDF (`application/pdf`) with every matched region annotated. Temporary files are deleted automatically after the response.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Key features
 
-## Make your content agent ready
-
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
+<CardGroup cols={2}>
+  <Card title="3-tier text matching" icon="magnifying-glass">
+    Exact → sentence → collapsed-whitespace fallback handles even character-spaced PDFs.
   </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
+  <Card title="Async PDF download" icon="bolt">
+    Non-blocking I/O via `httpx` keeps the service responsive under concurrent load.
   </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
+  <Card title="Stateless & clean" icon="trash">
+    Temp files are cleaned up after every request — no disk accumulation.
   </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
+  <Card title="LangChain compatible" icon="link">
+    Accepts standard `langchain_core.documents.Document` objects out of the box.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Installation
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+```bash
+pip install rag-pdf-highlighter
+```
+
+<Tip>
+  To run the full FastAPI microservice, start Uvicorn after installing: `uvicorn rag_pdf_highlighter.main:app --host 0.0.0.0 --port 8000`
+</Tip>

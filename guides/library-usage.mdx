@@ -1,0 +1,100 @@
+---
+title: "Use RAG PDF Highlighter as a Python library"
+description: "Import highlight_chunks_in_pdf directly into your Python project to annotate PDFs without running a web server."
+---
+
+The core highlighting logic in RAG PDF Highlighter is fully independent of FastAPI. You can import `highlight_chunks_in_pdf` directly into any Python script, notebook, or application and annotate PDFs in-process without running a web server. This is useful for batch pipelines, background workers, or any context where HTTP overhead is unnecessary.
+
+## Installation
+
+```bash
+pip install rag-pdf-highlighter
+```
+
+## Basic usage
+
+Pass a local PDF path and a list of `Document` objects from `langchain_core`. Each document carries the text to locate (`page_content`) and the zero-indexed page number where it appears (`metadata["page"]`):
+
+```python
+from langchain_core.documents import Document
+from rag_pdf_highlighter.utils.pdf_helpers import highlight_chunks_in_pdf
+
+documents = [
+    Document(page_content="Text to find", metadata={"page": 0}),
+]
+
+output_path = highlight_chunks_in_pdf(
+    pdf_path="./report.pdf",
+    documents=documents,
+)
+print(f"Highlighted PDF saved to: {output_path}")
+```
+
+## Return value
+
+`highlight_chunks_in_pdf` returns a `str` — the absolute path to a newly created temporary file containing the annotated PDF. The file is written to the system's default temp directory (e.g. `/tmp`) with a `_highlighted.pdf` suffix. The original file at `pdf_path` is never modified.
+
+## Working with multiple pages
+
+Supply one `Document` per chunk, setting `metadata["page"]` to the correct zero-indexed page for each. Chunks on different pages are processed independently:
+
+```python
+from langchain_core.documents import Document
+from rag_pdf_highlighter.utils.pdf_helpers import highlight_chunks_in_pdf
+
+documents = [
+    Document(page_content="Introduction paragraph text", metadata={"page": 0}),
+    Document(page_content="Key finding on the second page", metadata={"page": 1}),
+    Document(page_content="Conclusion sentence from page five", metadata={"page": 4}),
+]
+
+output_path = highlight_chunks_in_pdf(
+    pdf_path="./report.pdf",
+    documents=documents,
+)
+print(f"Highlighted PDF saved to: {output_path}")
+```
+
+Chunks whose `page` value is out of range for the document are silently skipped. Chunks with an empty `page_content` after whitespace normalisation are also skipped.
+
+## Handling exceptions
+
+`highlight_chunks_in_pdf` raises typed exceptions from `rag_pdf_highlighter.exceptions` so you can handle each failure mode precisely:
+
+```python
+from rag_pdf_highlighter.exceptions import HighlightError, PDFNotFoundError, NoDocumentsError
+from rag_pdf_highlighter.utils.pdf_helpers import highlight_chunks_in_pdf
+
+try:
+    output = highlight_chunks_in_pdf(pdf_path="./report.pdf", documents=docs)
+except NoDocumentsError:
+    print("Pass at least one document")
+except PDFNotFoundError:
+    print("Check the pdf_path exists")
+except HighlightError as e:
+    print(f"Highlighting failed: {e}")
+```
+
+| Exception | Raised when |
+|-----------|-------------|
+| `NoDocumentsError` | The `documents` list is empty |
+| `PDFNotFoundError` | No file exists at `pdf_path` |
+| `HighlightError` | Base class for all highlighting failures; catch as a fallback |
+
+## Cleanup
+
+The output file is your responsibility to delete. Call `cleanup_file` from the same module when you are done with the highlighted PDF:
+
+```python
+from rag_pdf_highlighter.utils.pdf_helpers import cleanup_file, highlight_chunks_in_pdf
+
+output_path = highlight_chunks_in_pdf(pdf_path="./report.pdf", documents=documents)
+
+# ... use output_path ...
+
+cleanup_file(output_path)  # silently deletes the file if it exists
+```
+
+`cleanup_file` is a no-op if the file has already been removed, so it is safe to call unconditionally.
+
+For a complete reference of all public functions and exceptions, see the [Python Library API reference](/api/highlight-chunks).

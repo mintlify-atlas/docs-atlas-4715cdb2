@@ -1,0 +1,79 @@
+---
+title: "Exception reference — RAG PDF Highlighter Python library"
+description: "Reference for HighlightError, PDFDownloadError, PDFNotFoundError, and NoDocumentsError raised by the RAG PDF Highlighter library."
+---
+
+RAG PDF Highlighter raises plain Python exceptions — all subclasses of `HighlightError` — so you can catch them without importing FastAPI. The exception hierarchy is defined in `rag_pdf_highlighter.exceptions`.
+
+```
+Exception
+└── HighlightError
+    ├── PDFDownloadError
+    ├── PDFNotFoundError
+    └── NoDocumentsError
+```
+
+## Exception reference
+
+<AccordionGroup>
+  <Accordion title="HighlightError">
+    Base exception for all highlighting errors. Catch this to handle any error from the library.
+
+    ```python
+    from rag_pdf_highlighter.exceptions import HighlightError
+    ```
+  </Accordion>
+
+  <Accordion title="PDFDownloadError">
+    Raised when `download_pdf()` cannot fetch the PDF from the given URL. Causes include network errors, HTTP 4xx/5xx responses, and timeouts.
+
+    ```python
+    from rag_pdf_highlighter.exceptions import PDFDownloadError
+    ```
+  </Accordion>
+
+  <Accordion title="PDFNotFoundError">
+    Raised when `highlight_chunks_in_pdf()` is called with a `pdf_path` that does not exist on disk.
+
+    ```python
+    from rag_pdf_highlighter.exceptions import PDFNotFoundError
+    ```
+  </Accordion>
+
+  <Accordion title="NoDocumentsError">
+    Raised when `highlight_chunks_in_pdf()` receives an empty `documents` list.
+
+    ```python
+    from rag_pdf_highlighter.exceptions import NoDocumentsError
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Catching exceptions
+
+The example below shows how to handle each exception type in order of specificity, with `HighlightError` as the final catch-all for any other library error.
+
+```python
+from rag_pdf_highlighter.exceptions import (
+    HighlightError,
+    PDFDownloadError,
+    PDFNotFoundError,
+    NoDocumentsError,
+)
+from rag_pdf_highlighter.utils.pdf_helpers import highlight_chunks_in_pdf
+
+try:
+    output = highlight_chunks_in_pdf(pdf_path="./report.pdf", documents=docs)
+except NoDocumentsError:
+    print("Provide at least one document to highlight")
+except PDFNotFoundError as e:
+    print(f"PDF file not found: {e}")
+except PDFDownloadError as e:
+    print(f"Could not download PDF: {e}")
+except HighlightError as e:
+    print(f"Highlighting failed: {e}")
+```
+
+<Note>
+  `PDFDownloadError` is only raised by `download_pdf()`, not by `highlight_chunks_in_pdf()` — you will see it when using the async download helper.
+</Note>

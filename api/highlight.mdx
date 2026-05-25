@@ -1,0 +1,128 @@
+---
+title: "POST /highlight — annotate a PDF with highlights"
+description: "POST /highlight accepts a PDF URL and document list, locates each text chunk using 3-tier matching, and streams back an annotated PDF."
+---
+
+This is the primary endpoint of RAG PDF Highlighter. It downloads the PDF from the provided URL, highlights all matching text chunks using a 3-tier search strategy (exact match → sentence match → collapsed-whitespace match), and returns the annotated document as a binary PDF.
+
+## Request
+
+**Method and path:** `POST /highlight`
+
+**Content-Type:** `application/json`
+
+<ParamField body="pdf_url" type="string" required>
+  Publicly accessible URL of the PDF to download and annotate. The service fetches this URL at request time using an async HTTP client with a 60-second timeout.
+</ParamField>
+
+<ParamField body="documents" type="object[]" required>
+  List of document objects identifying the text chunks to highlight. At least one entry is required.
+
+  <Expandable title="document object properties">
+    <ResponseField name="page_content" type="string" required>
+      The text chunk to locate in the PDF. Whitespace is normalised before searching — multiple spaces and newlines are collapsed to a single space.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      Page-level metadata for the chunk.
+
+      <Expandable title="metadata properties">
+        <ResponseField name="page" type="integer" default="0">
+          Zero-indexed page number where the chunk appears. Page 0 is the first page of the document. If omitted, the service defaults to page 0.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<Note>
+  The 3-tier matching strategy tries exact search first, then sentence-level search, then a collapsed-whitespace search that handles PDFs with individually spaced characters (e.g. `"W H A T"` stored as `"WHAT"` in the text layer). If none of the three strategies find a match for a given chunk, that chunk is silently skipped and no highlight is added.
+</Note>
+
+## Response
+
+A successful request returns HTTP 200 with the annotated PDF as binary content.
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/pdf` |
+| `Content-Disposition` | `attachment; filename="highlighted.pdf"` |
+
+<ResponseField name="body" type="binary">
+  The raw binary content of the highlighted PDF. Save it directly to a `.pdf` file — do not attempt to parse it as JSON.
+</ResponseField>
+
+Temporary files (the downloaded original and the annotated output) are removed from the server automatically after the response is sent via background tasks.
+
+## Error responses
+
+All errors return a JSON body with a single `detail` key:
+
+```json
+{"detail": "error message here"}
+```
+
+| Status | Cause | Example `detail` |
+|---|---|---|
+| `400 Bad Request` | PDF could not be downloaded from the provided URL | `"Failed to download PDF: connection refused"` |
+| `400 Bad Request` | Empty document list passed to the highlighter | `"No documents provided"` |
+| `422 Unprocessable Entity` | Missing `pdf_url` or `documents` in the request body | _(FastAPI validation error)_ |
+| `500 Internal Server Error` | Unexpected failure during the highlighting process | `"Highlighting failed: <reason>"` |
+
+<Warning>
+  A 400 is returned for both download failures and empty document lists. Check the `detail` message to distinguish the two cases.
+</Warning>
+
+## Example
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST http://localhost:8000/highlight \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pdf_url": "https://example.com/report.pdf",
+    "documents": [
+      {
+        "page_content": "Text to highlight in the PDF",
+        "metadata": {"page": 0}
+      }
+    ]
+  }' \
+  --output highlighted.pdf
+```
+
+```python Python (httpx)
+import httpx
+
+response = httpx.post(
+    "http://localhost:8000/highlight",
+    json={
+        "pdf_url": "https://example.com/report.pdf",
+        "documents": [
+            {
+                "page_content": "Text to highlight in the PDF",
+                "metadata": {"page": 0}
+            }
+        ]
+    },
+)
+response.raise_for_status()
+with open("highlighted.pdf", "wb") as f:
+    f.write(response.content)
+```
+
+</CodeGroup>
+
+## Health check: GET /
+
+A simple liveness probe. No request body or authentication is required.
+
+```bash
+curl http://localhost:8000/
+```
+
+Returns HTTP 200 with:
+
+```json
+{"status": "ok the app is running"}
+```

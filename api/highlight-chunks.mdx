@@ -1,0 +1,102 @@
+---
+title: "highlight_chunks_in_pdf — Python library reference"
+description: "Complete reference for highlight_chunks_in_pdf, download_pdf, and cleanup_file — the public Python API of RAG PDF Highlighter."
+---
+
+`rag_pdf_highlighter.utils.pdf_helpers` exposes three public functions. These can be called directly in any Python application without running the FastAPI server.
+
+## `highlight_chunks_in_pdf`
+
+```
+highlight_chunks_in_pdf(pdf_path: str, documents: list[Document]) -> str
+```
+
+Opens the PDF at `pdf_path`, applies highlights to every chunk in `documents`, saves the annotated copy to a new temp file, and returns its path.
+
+<ParamField path="pdf_path" type="string" required>
+  Absolute or relative path to the local PDF file.
+</ParamField>
+
+<ParamField path="documents" type="list[Document]" required>
+  List of `langchain_core.documents.Document` objects. Each must have `page_content` (string) and `metadata["page"]` (zero-indexed integer).
+</ParamField>
+
+**Returns:** Path to a temp file containing the highlighted PDF.
+
+**Raises:**
+- `NoDocumentsError` if `documents` is empty
+- `PDFNotFoundError` if `pdf_path` does not exist
+- `HighlightError` as base for all other errors
+
+```python
+from langchain_core.documents import Document
+from rag_pdf_highlighter.utils.pdf_helpers import highlight_chunks_in_pdf
+
+documents = [
+    Document(page_content="Text to find", metadata={"page": 0}),
+]
+
+output_path = highlight_chunks_in_pdf(
+    pdf_path="./report.pdf",
+    documents=documents,
+)
+print(f"Highlighted PDF saved to: {output_path}")
+```
+
+<Note>
+  The output file is written to a system temp directory. Call `cleanup_file(output_path)` when done.
+</Note>
+
+## `download_pdf`
+
+```
+async def download_pdf(url: str) -> str
+```
+
+Downloads a PDF from the given URL asynchronously using `httpx` and writes it to a temp file. Returns the path to the temp file.
+
+<ParamField path="url" type="string" required>
+  URL of the PDF to download. HTTP 60s timeout.
+</ParamField>
+
+**Returns:** Path to the downloaded temp file.
+
+**Raises:**
+- `PDFDownloadError` if the download fails (network error, non-2xx response, etc.)
+
+<Note>
+  This is an async function — call it with `await` inside an async context.
+</Note>
+
+```python
+import asyncio
+from rag_pdf_highlighter.utils.pdf_helpers import download_pdf, cleanup_file
+
+async def main():
+    path = await download_pdf("https://example.com/report.pdf")
+    try:
+        # process path...
+        pass
+    finally:
+        cleanup_file(path)
+
+asyncio.run(main())
+```
+
+## `cleanup_file`
+
+```
+cleanup_file(path: str) -> None
+```
+
+Silently deletes the file at `path` if it exists. Does nothing if the file is already gone.
+
+<ParamField path="path" type="string" required>
+  Absolute path to the file to delete.
+</ParamField>
+
+```python
+from rag_pdf_highlighter.utils.pdf_helpers import cleanup_file
+
+cleanup_file("/tmp/highlighted_abc123.pdf")
+```

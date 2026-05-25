@@ -1,0 +1,110 @@
+---
+title: "Integrating the PDF highlighter into RAG pipelines"
+description: "Learn how RAG PDF Highlighter fits into retrieval-augmented generation workflows, accepting LangChain Documents and returning annotated PDFs."
+---
+
+In a retrieval-augmented generation pipeline, a retriever queries a vector store and returns a list of `Document` objects — each carrying the retrieved text and the metadata needed to trace it back to its source. RAG PDF Highlighter closes the loop by accepting those same `Document` objects and returning the original PDF with every retrieved passage highlighted. Users can immediately see exactly which passages informed the model's answer, without any manual cross-referencing.
+
+## The Document schema
+
+RAG PDF Highlighter works directly with `langchain_core.documents.Document` objects — the standard unit of retrieved content in LangChain-based pipelines. No conversion or adapter layer is required.
+
+Two fields are read from each document:
+
+- `page_content` — the text chunk to locate and highlight in the PDF.
+- `metadata["page"]` — the zero-indexed page number where the chunk appears.
+
+```python
+from langchain_core.documents import Document
+
+doc = Document(
+    page_content="The annual revenue increased by 12%...",
+    metadata={"page": 3}  # zero-indexed; page 4 in the PDF viewer
+)
+```
+
+<Note>
+`metadata["page"]` is **zero-indexed**. Page 0 is the first page of the document. This matches the convention used by both PyMuPDF (which powers the highlighter) and most LangChain document loaders such as `PyPDFLoader`.
+</Note>
+
+Any additional keys in `metadata` are ignored, so documents enriched with source filenames, scores, or other retriever metadata pass through safely.
+
+## End-to-end RAG example
+
+The most common integration pattern is to run the highlighter as a microservice alongside your RAG application. After the retriever returns its documents, serialize them and `POST` to the `/highlight` endpoint with the PDF URL. The response body is the annotated PDF, ready to stream to your user.
+
+```python
+import httpx
+from langchain_core.documents import Document
+
+# After retrieval step — documents come from your vector store retriever
+retrieved_docs = [
+    Document(page_content="Annual revenue increased by 12%", metadata={"page": 3}),
+    Document(page_content="Operating costs fell by 5% year over year", metadata={"page": 7}),
+]
+
+payload = {
+    "pdf_url": "https://example.com/annual-report.pdf",
+    "documents": [
+        {"page_content": doc.page_content, "metadata": doc.metadata}
+        for doc in retrieved_docs
+    ],
+}
+
+response = httpx.post("http://localhost:8000/highlight", json=payload)
+with open("highlighted_report.pdf", "wb") as f:
+    f.write(response.content)
+```
+
+The service downloads the PDF, runs the 3-tier text matching strategy for each chunk, applies highlight annotations, and returns the annotated file. Temporary files are cleaned up automatically after the response is sent — no disk state accumulates between requests.
+
+<Tip>
+To start the microservice locally, run `uvicorn rag_pdf_highlighter.main:app --host 0.0.0.0 --port 8000`. A Docker image is also available if you prefer a containerized deployment.
+</Tip>
+
+## Using the library directly
+
+When the PDF is already on disk — for example, after loading it with `PyPDFLoader` during an ingestion step — you can call `highlight_chunks_in_pdf` directly without going through the HTTP layer. This is useful for batch processing or for embedding the highlighter into a larger Python application.
+
+```python
+from langchain_core.documents import Document
+from rag_pdf_highlighter.utils.pdf_helpers import highlight_chunks_in_pdf
+
+documents = [
+    Document(page_content="Annual revenue increased by 12%", metadata={"page": 3}),
+    Document(page_content="Operating costs fell by 5% year over year", metadata={"page": 7}),
+]
+
+output_path = highlight_chunks_in_pdf(
+    pdf_path="./annual-report.pdf",
+    documents=documents,
+)
+print(f"Highlighted PDF saved to: {output_path}")
+```
+
+`highlight_chunks_in_pdf` writes the annotated PDF to a new temporary file and returns its path. The caller is responsible for moving or deleting that file. The function raises plain Python exceptions (`NoDocumentsError`, `PDFNotFoundError`) with no FastAPI dependency, so it integrates cleanly into any Python environment.
+
+<Note>
+When using the library directly, the PDF must already be available on the local filesystem. Use `download_pdf` from `rag_pdf_highlighter.utils.pdf_helpers` if you need to fetch it from a URL before calling `highlight_chunks_in_pdf`.
+</Note>
+
+## Page number conventions
+
+Both PyMuPDF and the standard LangChain loaders use **zero-indexed** page numbers. Page 0 is the first page, page 1 is the second, and so on. The `metadata["page"]` value you pass must use this same convention to match the correct page in the PDF.
+
+<Warning>
+Some document loaders and PDF libraries use **1-indexed** page numbers. If your retrieval pipeline produces 1-indexed page metadata, you must subtract 1 from each page number before passing documents to this service. Passing a 1-indexed page number will cause the highlighter to search the wrong page, and chunks will not be found.
+</Warning>
+
+For example, if your loader yields `metadata={"page": 4}` meaning "the fourth page" (1-indexed), convert it before passing to the highlighter:
+
+```python
+# Convert 1-indexed loader output to zero-indexed before highlighting
+documents = [
+    Document(
+        page_content=doc.page_content,
+        metadata={**doc.metadata, "page": doc.metadata["page"] - 1},
+    )
+    for doc in loader_documents
+]
+```
